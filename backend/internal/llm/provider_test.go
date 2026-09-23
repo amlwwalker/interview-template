@@ -60,6 +60,8 @@ func TestEchoProviderIgnoresATrailingAssistantMessage(t *testing.T) {
 	}
 }
 
+// Usage must be internally consistent, so a caller summing tokens across a
+// conversation gets a number that means something.
 func TestEchoProviderReportsConsistentUsage(t *testing.T) {
 	p := newEchoProvider()
 
@@ -189,6 +191,8 @@ func TestSlowProviderRespectsAContextDeadline(t *testing.T) {
 	}
 }
 
+// Cancellation is distinct from a deadline: the caller gave up deliberately,
+// and the error must say so rather than reporting a timeout.
 func TestSlowProviderRespectsCancellation(t *testing.T) {
 	p := newSlowProvider()
 

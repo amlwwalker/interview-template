@@ -146,6 +146,7 @@ func TestIntegrationListIsEmptySliceNotNil(t *testing.T) {
 	}
 }
 
+// GetBySlug round-trips every column a caller needs to run the model.
 func TestIntegrationGetBySlugReturnsTheRow(t *testing.T) {
 	s, pool, ctx := newTestStore(t)
 	truncate(t, pool, ctx)
@@ -161,6 +162,8 @@ func TestIntegrationGetBySlugReturnsTheRow(t *testing.T) {
 	}
 }
 
+// An unknown slug is a client error, and must be reported as ErrNotFound
+// rather than an empty row a caller might mistake for a real one.
 func TestIntegrationGetBySlugUnknownReturnsNotFound(t *testing.T) {
 	s, pool, ctx := newTestStore(t)
 	truncate(t, pool, ctx)

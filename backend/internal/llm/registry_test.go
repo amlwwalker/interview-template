@@ -15,6 +15,8 @@ func (s *stubProvider) Complete(context.Context, Request) (Response, error) {
 	return Response{Content: s.name}, nil
 }
 
+// The registry returns the exact implementation registered, not a copy or a
+// lookalike — identity matters because providers are stateful singletons.
 func TestRegistryReturnsTheProviderRegisteredUnderAKey(t *testing.T) {
 	want := &stubProvider{name: "mine"}
 

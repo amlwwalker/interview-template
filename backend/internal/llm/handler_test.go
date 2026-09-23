@@ -16,6 +16,8 @@ func newTestHandler(store Store) http.Handler {
 	return NewHandler(store, logger).Routes()
 }
 
+// The endpoint a frontend calls to populate its model picker: 200, a JSON
+// array, and the slug and name each entry needs.
 func TestListLLMsReturns200AndAJSONArray(t *testing.T) {
 	h := newTestHandler(newFakeStore(
 		LLM{ID: 1, Slug: "echo-mock", Name: "Echo (mock)", ProviderKey: KeyEcho, Model: "echo-v1", Enabled: true},
