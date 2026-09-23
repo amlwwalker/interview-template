@@ -27,13 +27,6 @@
       "glob": "backend/**/*_test.go",
       "language": "go"
     },
-    "backendTs": {
-      "dir": "backend-ts",
-      "command": "make test-backend-ts",
-      "integrationCommand": "make test-integration-ts",
-      "glob": "backend-ts/src/**/*.test.ts",
-      "language": "vitest"
-    },
     "frontend": {
       "dir": "frontend",
       "command": "make test-frontend",

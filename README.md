@@ -12,21 +12,14 @@ The frontend runs on a different origin to the API, so CORS is exercised for
 real rather than hidden behind a dev proxy.
 
 ```
-migrations/       the schema — ONE copy, shared by both backends
+migrations/       the schema, applied in order
 scripts/          initdb.sh: creates the database, applies migrations
 backend/          Go — chi, pgx, graceful shutdown
-backend-ts/       TypeScript — Fastify, pg, same API
 frontend/         Vite, React, TypeScript, Vitest
 .claude/          the development process: config + skills
 .github/          issue and PR templates, CI
 CLAUDE.md         the rules — read this first
 ```
-
-**Two interchangeable backends.** Identical API, identical error bodies, one
-schema between them. Run whichever the conversation calls for; the frontend
-does not know or care which is answering. That is not an assertion — the
-frontend's 29-check browser suite passes unmodified against both, which is what
-makes the claim worth anything.
 
 ## Requirements
 
@@ -35,13 +28,10 @@ Go 1.24+, Node 18+, and a local Postgres (Homebrew or Postgres.app).
 ## Run it
 
 ```bash
-make setup          # both backends, frontend, and both databases
-make dev-backend    # :8080   Go        (one terminal)
-make dev-frontend   # :5173             (another)
+make setup          # backend, frontend and both databases
+make dev-backend    # :8080   (one terminal)
+make dev-frontend   # :5173   (another)
 ```
-
-For the TypeScript API instead, stop the Go one and run `make dev-backend-ts`.
-Both bind :8080, so exactly one at a time.
 
 Open http://localhost:5173. Three seeded rows appear at the bottom.
 
@@ -57,16 +47,14 @@ brew install postgresql@16 && brew services start postgresql@16
 a test — that is slow and burns tokens for something a shell does instantly.
 
 ```
-make test                  every unit suite
+make test                  backend + frontend unit tests
 make test-backend          Go only, no database
-make test-backend-ts       TypeScript API only
 make test-frontend         frontend only
 make test-integration      Go against the test database
-make test-integration-ts   TypeScript against the test database
 make test-all              everything
 make watch-frontend        watch mode — the TDD loop
-make lint                  vet, gofmt, tsc --noEmit
-make ci / make ci-ts       exactly what GitHub runs
+make lint                  go vet, gofmt, tsc --noEmit
+make ci                    exactly what GitHub runs
 ```
 
 CI calls these same targets. If they ever disagree with your machine, the
@@ -83,10 +71,8 @@ the app looks broken for no visible reason. `make setup` creates both.
 |---|---|---|
 | Go unit | 15 | Every handler and status code, against an in-memory fake store |
 | Go integration | 12 | The actual SQL, against a real Postgres |
-| TypeScript API unit | 28 | The same cases as the Go suite, plus CORS preflights |
-| TypeScript API integration | 14 | The same SQL, plus pool recovery after a connection drop |
 | Frontend (Vitest) | 26 | API client parsing, PATCH/PUT body construction, rendering |
-| Browser (Playwright) | 29 | All six verbs cross-origin, against **either** backend |
+| Browser (Playwright) | 29 | All six verbs, cross-origin, in a real browser |
 
 The Go unit tests prove the HTTP layer; the integration tests prove the
 `COALESCE` behaves. Those are different claims and both are worth pinning — a
@@ -120,6 +106,24 @@ curl -X PUT   localhost:8080/api/v1/records/1 -H 'Content-Type: application/json
 # -> description reset to "", active reset to false
 ```
 
+## The board
+
+```bash
+./ghboard                   # usage
+./ghboard validate          # does the config match the live board?
+./ghboard list [phase]      # cards, all or one column
+./ghboard find <text>       # search issues when you forget the number
+./ghboard next              # what to pick up
+./ghboard stale [days]      # backlog tickets that need refining
+./ghboard move 7 ready      # move a card
+```
+
+Phases are `backlog`, `ready`, `inProgress`, `inReview`, `done` — the keys from
+`.claude/workflow.config.json`, never the column's display name. Rename a
+column on the board and one line of config keeps everything working.
+
+Needs `gh` (authenticated with the `project` scope) and `jq`.
+
 ## How work gets done here
 
 Read `CLAUDE.md`. In short: every feature starts as a ticket on the project
@@ -135,28 +139,6 @@ another project, copy `.claude/` across and edit that one file.
 Two global skills are expected to be installed: `superpowers:brainstorming` for
 requirements, and `wireframe-ui` for the house UI style. They are declared in
 `requiredSkills` and checked at the start of a session rather than assumed.
-
-## Why two backends
-
-Because the honest answer to "Go or TypeScript?" is "it depends", and having
-both lets you show the reasoning rather than assert it.
-
-They share a schema, a frontend and an error contract, so the differences that
-remain are the interesting ones:
-
-- **Absent vs zero.** Go needs `*string` to tell `{"active": false}` from `{}`.
-  TypeScript gets it free from optional properties. Same contract, different
-  mechanism.
-- **Pool failure.** pgxpool absorbs a dropped connection internally. Node's
-  `pg` emits an `error` event on the idle client, and an unhandled one
-  terminates the process — so `db.ts` has a handler the Go code does not need.
-  There is an integration test that kills the connections and asserts recovery.
-- **Type coercion.** Fastify's ajv coerces by default, so `{"name": 42}` would
-  be silently accepted as `"42"`. `coerceTypes: false` restores parity with
-  Go's decoder. Caught by a test, not by inspection.
-- **Handler registration order.** Fastify children inherit the error handler
-  present when they are registered, so `setErrorHandler` after the routes
-  silently leaks raw error messages. Also caught by a test.
 
 ## Things worth being able to explain
 

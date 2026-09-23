@@ -154,12 +154,10 @@ EOF
   ok "wrote $(basename "$(dirname "$target")")/.env"
 }
 
-# Both backends read the same connection string. Whichever you run, it talks
-# to the database this script just prepared. Skipped for the test database,
-# which must never become the one the app points at.
+# Skipped for the test database, which must never become the one the app
+# points at.
 if $WRITE_ENV; then
   write_env "$ROOT_DIR/backend/.env"
-  write_env "$ROOT_DIR/backend-ts/.env"
 fi
 
 echo

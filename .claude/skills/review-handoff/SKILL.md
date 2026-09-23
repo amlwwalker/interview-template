@@ -102,6 +102,10 @@ One short message: the PR link, the issue link, and that the checklist is
 waiting on the ticket. Do not paste the whole checklist into chat — it lives on
 the card so it can be ticked.
 
+If a step fails, ask them to comment on the issue saying which one and what
+they saw, then tell you. Nothing polls GitHub, so you will not see it until
+they mention it — read it with `./ghboard read <issue>`.
+
 ## What this skill will not do
 
 - Move the card to Done. That is the human's verification, and it is what

@@ -43,10 +43,59 @@ deferred, not skipped — note which ones are outstanding.
 | Phase | State on disk / board | Skill |
 |---|---|---|
 | 1. Design | No ticket exists | `superpowers:brainstorming`, then `ticket-authoring` |
-| 2. Approve | Ticket in Backlog | **The human approves it.** Then move to Ready |
+| 2. Approve | Ticket in Backlog | `ticket-refinement` assesses; **the human decides.** Then move to Ready |
 | 3. Implement | Ticket in Ready | TDD loop (see below) |
 | 4. Review | Branch green, no PR | `review-handoff` |
 | 5. Release | Card in Done | `release-to-production` |
+
+## The ticket is the record, not the chat
+
+Whenever you act on an existing ticket, read it first:
+
+```bash
+./ghboard read 7        # body + every comment, in order
+```
+
+Decisions get made in comments once a ticket exists — a scope cut, an answer
+to a question you asked, a "no, do it the other way". Working from the body
+you wrote three hours ago means acting on a superseded plan.
+
+This is not automatic. Nothing polls GitHub, so a comment sits unread until
+someone says "I commented on #7" or "check the ticket". Say so plainly when you
+hand a ticket over, so the human knows a comment needs flagging rather than
+assuming it was picked up.
+
+When a comment changes the plan, reflect it in the ticket **body** with
+`gh issue edit` rather than leaving it buried in a thread. The body is what the
+next person reads.
+
+## Finding your way around the board
+
+`./ghboard` answers the questions that come up before routing:
+
+```bash
+./ghboard list              # every card and its column
+./ghboard list ready        # one column
+./ghboard find "private"    # search titles and bodies — for when you
+                            # remember the ticket but not its number
+./ghboard next              # what to pick up: Ready, oldest first
+./ghboard stale             # Backlog cards that are old or incomplete
+./ghboard status 7          # which column is #7 in?
+```
+
+`stale` is the one worth running before asking "what should I do next?". It
+flags Backlog tickets missing the sections a ticket needs before anyone could
+start it — no acceptance criteria, no test plan, unfilled template
+placeholders — and tickets that have simply sat there long enough to be worth
+re-deciding. Those are refinement conversations, not work.
+
+If `next` is empty and `stale` is full, the honest answer to "what's next" is
+"nothing is ready; here are three tickets that need a decision from you".
+
+To assess whether a specific ticket can be promoted — has every open question
+been answered, are the criteria checkable, do the prerequisites exist — use
+`ticket-refinement`. `stale` finds candidates structurally; refinement is the
+judgement call about whether one is genuinely startable.
 
 ## Routing
 
@@ -59,8 +108,9 @@ Work out the phase from evidence, in this order, and stop at the first match:
      Anything red → stay in the TDD loop and fix it.
 2. **Card in Done with unreleased commits on the integration branch?**
    → `release-to-production`.
-3. **The user named a ticket or issue number?** Read it, check its column,
-   route accordingly.
+3. **The user named a ticket or issue number?** Read it with
+   `./ghboard read <n>` — **body and comments** — check its column, and route
+   accordingly.
 4. **Nothing else matches** → phase 1. Requirements first.
 
 ## The TDD loop
@@ -86,14 +136,32 @@ This project's global TDD skill owns the discipline. What this project adds:
   would fail". A test that passes on first run is testing nothing, or testing
   something that already worked — either way it is not driving the design.
 
-## Branch naming
+## Branching
 
-```
-<featurePrefix><issue-number>-<short-slug>
+**Always cut the branch from the integration branch, never from production:**
+
+```bash
+git fetch origin
+git checkout -b <featurePrefix><issue-number>-<slug> origin/<integration>
 ```
 
-e.g. `feature/42-put-endpoint`. The issue number is how every later step finds
-its way back to the ticket, so a branch without one breaks the chain.
+e.g. `git checkout -b feature/42-put-endpoint origin/dev`.
+
+Branching from `main` while `dev` is ahead means the PR back into `dev` either
+carries commits that are already there or conflicts with them — and in both
+cases the diff a reviewer sees is not the work. `review-handoff` computes its
+test inventory from `git merge-base HEAD origin/dev`, so a branch with the
+wrong base produces a wrong inventory too.
+
+The issue number in the name is how every later step finds its way back to the
+ticket. A branch without one breaks the chain.
+
+If `origin/<integration>` does not exist, stop and say so — the whole flow
+(PR to integration, then integration to production) depends on it:
+
+```bash
+git checkout -b dev main && git push -u origin dev
+```
 
 ## What this skill will not do
 

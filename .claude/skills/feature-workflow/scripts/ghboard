@@ -7,6 +7,7 @@
 #   ghboard find <text>            search issue titles and bodies
 #   ghboard next                   what to pick up: Ready, oldest first
 #   ghboard stale [days]           Backlog cards that are old or incomplete
+#   ghboard read <issue>           the ticket body AND its comments
 #   ghboard status <issue>         which column is it in?
 #   ghboard add <issue>            put an issue on the board
 #   ghboard move <issue> <phase>   move a card
@@ -266,6 +267,32 @@ cmd_stale() {
   fi
 }
 
+# The full ticket: body plus every comment, in order. Comments are where
+# decisions get made once a ticket exists, so anything acting on a ticket
+# should read this rather than only the body it wrote earlier.
+cmd_read() {
+  local issue="$1" json
+  json="$(gh issue view "$issue" --repo "$REPO" \
+            --json number,title,state,body,comments,url)" \
+    || die "could not read issue #$issue"
+
+  head_ "#$(jq -r .number <<<"$json")  $(jq -r .title <<<"$json")"
+  printf '  \033[2m%s · %s\033[0m\n\n' \
+    "$(jq -r .state <<<"$json" | tr '[:upper:]' '[:lower:]')" "$(jq -r .url <<<"$json")"
+
+  jq -r '.body // "(no body)"' <<<"$json"
+
+  local count
+  count="$(jq -r '.comments | length' <<<"$json")"
+  if (( count == 0 )); then
+    printf '\n\033[2m(no comments)\033[0m\n'
+    return
+  fi
+
+  head_ "Comments ($count)"
+  jq -r '.comments[] | "\n--- \(.author.login) · \(.createdAt) ---\n\(.body)"' <<<"$json"
+}
+
 cmd_status() {
   local issue="$1" found
   found="$(rows | awk -F'\t' -v n="$issue" '$2 == n {print $3}' | head -1)"
@@ -313,6 +340,7 @@ case "${1:-}" in
   find)     [[ $# -ge 2 ]] || die "usage: ghboard find <text>";           shift; cmd_find "$*" ;;
   next)     cmd_next ;;
   stale)    cmd_stale "${2:-14}" ;;
+  read)     [[ $# -eq 2 ]] || die "usage: ghboard read <issue>";          cmd_read "$2" ;;
   status)   [[ $# -eq 2 ]] || die "usage: ghboard status <issue>";        cmd_status "$2" ;;
   add)      [[ $# -eq 2 ]] || die "usage: ghboard add <issue>";           cmd_add "$2" ;;
   move)     [[ $# -eq 3 ]] || die "usage: ghboard move <issue> <phase>";  cmd_move "$2" "$3" ;;
