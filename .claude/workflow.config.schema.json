@@ -36,7 +36,7 @@
         },
         "columns": {
           "type": "object",
-          "description": "Maps the workflow's internal phase names to the literal option names on the board. These are matched EXACTLY, case included. `board.sh validate` reads the live options and fails if any value here is missing, rather than silently creating a duplicate column.",
+          "description": "Maps the workflow's internal phase names to the literal option names on the board. These are matched EXACTLY, case included. `ghboard validate` reads the live options and fails if any value here is missing, rather than silently creating a duplicate column.",
           "required": ["backlog", "ready", "inProgress", "inReview", "done"],
           "additionalProperties": false,
           "properties": {

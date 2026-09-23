@@ -23,7 +23,7 @@ in and hands off to the skill that does.
    The config deliberately does not store this, so a fork or rename cannot
    leave a stale value.
 
-3. **Validate the board** with `scripts/board.sh validate`. It lists the live
+3. **Validate the board** with `./ghboard validate`. It lists the live
    Status options and compares them to `project.columns`. If they disagree it
    stops. Do not "helpfully" create the missing column — a typo in the config
    and a genuinely absent column look identical from here, and one of those is

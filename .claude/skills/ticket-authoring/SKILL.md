@@ -107,8 +107,8 @@ gh issue create \
 Then put it on the board in **backlog**, not ready:
 
 ```bash
-.claude/skills/feature-workflow/scripts/board.sh add <issue-number>
-.claude/skills/feature-workflow/scripts/board.sh move <issue-number> backlog
+./ghboard add <issue-number>
+./ghboard move <issue-number> backlog
 ```
 
 ## Then stop
@@ -124,7 +124,7 @@ so do not skip it to seem responsive.
 When they approve:
 
 ```bash
-.claude/skills/feature-workflow/scripts/board.sh move <issue-number> ready
+./ghboard move <issue-number> ready
 ```
 
 If they ask for changes, edit the issue with `gh issue edit` rather than

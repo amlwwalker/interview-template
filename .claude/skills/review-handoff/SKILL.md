@@ -90,7 +90,7 @@ writing "open dev" and leaving the reader to guess.
 ## 7. Now move the card
 
 ```bash
-.claude/skills/feature-workflow/scripts/board.sh move <issue> inReview
+./ghboard move <issue> inReview
 ```
 
 Last, deliberately. The card now says something true: it is on `dev` and can be

@@ -10,7 +10,7 @@ The card reaching Done is the authorisation. Nothing else is.
 ## 1. Verify the authorisation is real
 
 ```bash
-.claude/skills/feature-workflow/scripts/board.sh status <issue>
+./ghboard status <issue>
 ```
 
 It must report the `done` column. If it says In review, the human has not
