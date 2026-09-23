@@ -24,6 +24,14 @@ func newTestStore(t *testing.T) (*PostgresStore, context.Context) {
 
 	url := os.Getenv("DATABASE_URL")
 	if url == "" {
+		// Skipping locally is a convenience — you may not have Postgres running.
+		// Skipping on CI is a silent lie: the run goes green having tested
+		// nothing, which is worse than failing.
+		if os.Getenv("CI") != "" {
+			t.Fatal("DATABASE_URL is empty on CI. The integration tests would " +
+				"silently skip and the run would pass having tested nothing. " +
+				"Check the workflow sets TEST_DB_URL for `make test-integration`.")
+		}
 		t.Skip("DATABASE_URL not set; run `make test-integration`")
 	}
 

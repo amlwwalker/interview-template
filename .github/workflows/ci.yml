@@ -53,9 +53,13 @@ jobs:
           done
 
       - name: Integration tests
-        run: make -C backend test-integration
         env:
-          DB_URL: postgres://runner:runner@localhost:5432/crud_test?sslmode=disable
+          TEST_DB_URL: postgres://runner:runner@localhost:5432/crud_test?sslmode=disable
+        run: |
+          # Prove the connection string reaches the database before running
+          # twelve tests that would each report the same failure.
+          psql "$TEST_DB_URL" -c 'SELECT 1' >/dev/null
+          make -C backend test-integration
 
       - name: Build
         run: make -C backend build
