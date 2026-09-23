@@ -199,9 +199,22 @@ func TestIntegrationDuplicateSlugIsRejected(t *testing.T) {
 
 // The seed migration is what a fresh checkout gets. If it stops inserting the
 // mocks, every other integration test still passes while the app has no LLMs.
+//
+// This re-applies the seed file rather than trusting the table's current
+// contents, because the tests above TRUNCATE. Asserting on leftover migration
+// state would make this test pass or fail depending on execution order, which
+// is worse than not having it.
 func TestIntegrationSeedMigrationInsertedTheMockRows(t *testing.T) {
-	s, _, ctx := newTestStore(t)
-	// Deliberately does not truncate: this asserts on migration output.
+	s, pool, ctx := newTestStore(t)
+	truncate(t, pool, ctx)
+
+	seed, err := os.ReadFile("../../../migrations/0004_seed_llms.sql")
+	if err != nil {
+		t.Fatalf("read seed migration: %v", err)
+	}
+	if _, err := pool.Exec(ctx, string(seed)); err != nil {
+		t.Fatalf("apply seed migration: %v", err)
+	}
 
 	got, err := s.List(ctx)
 	if err != nil {
@@ -225,5 +238,12 @@ func TestIntegrationSeedMigrationInsertedTheMockRows(t *testing.T) {
 		if found[slug] != key {
 			t.Errorf("seeded row %q has provider_key %q, want %q", slug, found[slug], key)
 		}
+	}
+
+	// ghost-mock is load-bearing: it is the configured-but-unrunnable row that
+	// the resolution tests depend on. Guard it explicitly so a future tidy-up
+	// that deletes it fails here with a reason.
+	if found["ghost-mock"] != "nonexistent" {
+		t.Error("ghost-mock must remain seeded with an unregistered provider_key")
 	}
 }
