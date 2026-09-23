@@ -55,6 +55,16 @@ func run(logger *slog.Logger) error {
 
 	logger.Info("connected to postgres")
 
+	// Warn about LLMs that are offered in the database but have no
+	// implementation compiled into this build. Deliberately not fatal: one
+	// stale configuration row is not worth the availability of every other
+	// LLM. The operator gets the same information without the outage.
+	registry := llm.NewDefaultRegistry()
+	if err := llm.CheckCatalogue(ctx, llm.NewPostgresStore(pool), registry, logger); err != nil {
+		// A catalogue we cannot read at all is a genuine startup problem.
+		return err
+	}
+
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           newRouter(cfg, pool, logger),
