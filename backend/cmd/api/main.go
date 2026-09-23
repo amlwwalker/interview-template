@@ -19,6 +19,7 @@ import (
 	"github.com/alex/crudapi/internal/config"
 	"github.com/alex/crudapi/internal/database"
 	"github.com/alex/crudapi/internal/httpx"
+	"github.com/alex/crudapi/internal/llm"
 	"github.com/alex/crudapi/internal/record"
 )
 
@@ -53,6 +54,16 @@ func run(logger *slog.Logger) error {
 	defer pool.Close()
 
 	logger.Info("connected to postgres")
+
+	// Warn about LLMs that are offered in the database but have no
+	// implementation compiled into this build. Deliberately not fatal: one
+	// stale configuration row is not worth the availability of every other
+	// LLM. The operator gets the same information without the outage.
+	registry := llm.NewDefaultRegistry()
+	if err := llm.CheckCatalogue(ctx, llm.NewPostgresStore(pool), registry, logger); err != nil {
+		// A catalogue we cannot read at all is a genuine startup problem.
+		return err
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -152,9 +163,13 @@ func newRouter(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) http.
 	})
 
 	recordHandler := record.NewHandler(record.NewPostgresStore(pool), logger)
+	llmHandler := llm.NewHandler(llm.NewPostgresStore(pool), logger)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Mount("/records", recordHandler.Routes())
+		// Every verb this serves must appear in AllowedMethods above, or the
+		// browser rejects the preflight before a handler is ever reached.
+		r.Mount("/llms", llmHandler.Routes())
 	})
 
 	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
