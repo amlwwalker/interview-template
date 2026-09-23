@@ -1,0 +1,320 @@
+#!/usr/bin/env bash
+#
+# ghboard — the only thing in this project that talks to the GitHub board.
+#
+#   ghboard validate               check the config against the live board
+#   ghboard list [phase]           every card, or just one column
+#   ghboard find <text>            search issue titles and bodies
+#   ghboard next                   what to pick up: Ready, oldest first
+#   ghboard stale [days]           Backlog cards that are old or incomplete
+#   ghboard status <issue>         which column is it in?
+#   ghboard add <issue>            put an issue on the board
+#   ghboard move <issue> <phase>   move a card
+#
+# `phase` is always a KEY from project.columns in workflow.config.json —
+# backlog, ready, inProgress, inReview, done — never the column's display
+# name. Rename a column on the board, change one line of config, and every
+# skill keeps working.
+#
+# Requires: gh (authenticated, with the `project` scope), jq.
+#
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# .claude/skills/feature-workflow/scripts -> .claude
+CLAUDE_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+CONFIG="$CLAUDE_DIR/workflow.config.json"
+
+# Sections a ticket must have before it can leave Backlog. Matches
+# ticket-authoring/references/ticket-template.md.
+REQUIRED_SECTIONS=("## Why" "## Capabilities" "## Out of scope" "## TDD test plan" "## Acceptance criteria")
+
+die()  { printf '\033[31merror\033[0m %s\n' "$1" >&2; exit 1; }
+ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
+warn() { printf '  \033[33m!\033[0m %s\n' "$1"; }
+head_() { printf '\n\033[1m%s\033[0m\n' "$1"; }
+
+usage() {
+  sed -n '3,19p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# Printed before the dependency checks, so a fresh machine still learns what
+# this does rather than only what it is missing.
+case "${1:-}" in
+  ""|-h|--help|help) usage; exit 0 ;;
+esac
+
+command -v gh >/dev/null 2>&1 || die "gh is not installed. https://cli.github.com"
+command -v jq >/dev/null 2>&1 || die "jq is not installed. Run: brew install jq"
+[[ -f "$CONFIG" ]] || die "no config at $CONFIG"
+
+gh auth status >/dev/null 2>&1 \
+  || die "gh is not authenticated. Run: gh auth login --scopes project"
+
+cfg() { jq -r "$1" "$CONFIG"; }
+
+OWNER="$(cfg '.project.owner')"
+NUMBER="$(cfg '.project.number')"
+STATUS_FIELD="$(cfg '.project.statusField')"
+
+# `gh project item-list --format json` exposes each custom field under a
+# lowercased, space-stripped key. A field called "Status" becomes .status; one
+# called "Work Stage" becomes .workstage. Derive it rather than hardcoding, or
+# this breaks on any board that named the field something else.
+STATUS_KEY="$(printf '%s' "$STATUS_FIELD" | tr '[:upper:]' '[:lower:]' | tr -d ' ')"
+
+# Resolved from git, never from config, so a fork or rename cannot desync it.
+REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)" \
+  || die "could not resolve the repository.
+    If gh asks for a default, run: gh repo set-default"
+
+# --- board introspection -----------------------------------------------------
+
+status_field_json() {
+  gh project field-list "$NUMBER" --owner "$OWNER" --format json \
+    | jq --arg name "$STATUS_FIELD" '.fields[] | select(.name == $name)'
+}
+
+project_id() {
+  gh project view "$NUMBER" --owner "$OWNER" --format json | jq -r .id
+}
+
+# Every item on the board, once, cached for the life of the process — several
+# commands need it and each call is a network round trip.
+ITEMS_CACHE=""
+items() {
+  if [[ -z "$ITEMS_CACHE" ]]; then
+    ITEMS_CACHE="$(gh project item-list "$NUMBER" --owner "$OWNER" --limit 500 --format json)"
+  fi
+  printf '%s' "$ITEMS_CACHE"
+}
+
+column_for_phase() {
+  local phase="$1" column
+  column="$(jq -r --arg p "$phase" '.project.columns[$p] // empty' "$CONFIG")"
+  [[ -n "$column" ]] || die "unknown phase '$phase'. Valid: $(jq -r '.project.columns | keys | join(", ")' "$CONFIG")"
+  printf '%s' "$column"
+}
+
+item_id_for_issue() {
+  items | jq -r --argjson n "$1" \
+    '.items[] | select(.content.number == $n) | .id' | head -1
+}
+
+# id<TAB>number<TAB>status<TAB>title, optionally filtered to one column.
+rows() {
+  local column="${1:-}"
+  items | jq -r --arg key "$STATUS_KEY" --arg col "$column" '
+    .items[]
+    | select(.content.number != null)
+    | . as $i
+    | (.[$key] // "(no status)") as $st
+    | select($col == "" or $st == $col)
+    | [$i.id, ($i.content.number|tostring), $st, $i.content.title]
+    | @tsv'
+}
+
+print_rows() {
+  local any=0
+  while IFS=$'\t' read -r _id number status title; do
+    any=1
+    printf '  \033[36m#%-5s\033[0m \033[2m%-13s\033[0m %s\n' "$number" "$status" "$title"
+  done
+  [[ $any -eq 1 ]] || printf '  \033[2m(none)\033[0m\n'
+}
+
+# --- commands ----------------------------------------------------------------
+
+cmd_validate() {
+  local field live missing=0
+  field="$(status_field_json)"
+  [[ -n "$field" && "$field" != "null" ]] \
+    || die "board $OWNER/$NUMBER has no field named '$STATUS_FIELD'"
+
+  live="$(jq -r '.options[].name' <<<"$field")"
+
+  ok "repo:  $REPO"
+  ok "board: $OWNER/$NUMBER"
+  printf '  live %s options: %s\n' "$STATUS_FIELD" "$(paste -sd', ' <<<"$live")"
+
+  while IFS=$'\t' read -r phase column; do
+    if grep -Fxq "$column" <<<"$live"; then
+      ok "$phase -> '$column'"
+    else
+      warn "$phase -> '$column' NOT FOUND on the board"
+      missing=$((missing + 1))
+    fi
+  done < <(jq -r '.project.columns | to_entries[] | [.key, .value] | @tsv' "$CONFIG")
+
+  if (( missing > 0 )); then
+    die "$missing configured column(s) missing.
+    Either the board is missing them, or workflow.config.json has a typo.
+    Both look identical from here, so fix it by hand — do not let a tool guess."
+  fi
+
+  ok "config matches the board"
+}
+
+cmd_list() {
+  local phase="${1:-}" column=""
+  if [[ -n "$phase" ]]; then
+    column="$(column_for_phase "$phase")"
+    head_ "$column"
+  else
+    head_ "$OWNER/$NUMBER — all cards"
+  fi
+  rows "$column" | print_rows
+}
+
+# Search titles and bodies. For when you remember what a ticket said but not
+# its number.
+cmd_find() {
+  local text="$1"
+  head_ "Issues matching \"$text\""
+
+  local found
+  found="$(gh issue list --repo "$REPO" --state all --limit 50 \
+             --search "$text" --json number,title,state \
+           | jq -r '.[] | [(.number|tostring), .state, .title] | @tsv')"
+
+  if [[ -z "$found" ]]; then
+    printf '  \033[2m(nothing matched)\033[0m\n'
+    return
+  fi
+
+  # Annotate each hit with its board column, which the issue itself does not know.
+  local board
+  board="$(rows)"
+
+  while IFS=$'\t' read -r number state title; do
+    local status
+    status="$(awk -F'\t' -v n="$number" '$2 == n {print $3}' <<<"$board" | head -1)"
+    [[ -n "$status" ]] || status="not on board"
+    printf '  \033[36m#%-5s\033[0m \033[2m%-13s %-6s\033[0m %s\n' \
+      "$number" "$status" "$(tr '[:upper:]' '[:lower:]' <<<"$state")" "$title"
+  done <<<"$found"
+}
+
+# What to pick up next: Ready, lowest issue number first (oldest).
+cmd_next() {
+  local column
+  column="$(column_for_phase ready)"
+  head_ "Ready to start — oldest first"
+
+  local ready
+  ready="$(rows "$column" | sort -t$'\t' -k2 -n)"
+
+  if [[ -z "$ready" ]]; then
+    printf '  \033[2m(nothing in %s)\033[0m\n' "$column"
+    printf '  Run: ghboard stale   — to see what needs refining first\n'
+    return
+  fi
+
+  print_rows <<<"$ready"
+
+  local top
+  top="$(head -1 <<<"$ready" | cut -f2)"
+  printf '\n  Start it with: \033[36mghboard move %s inProgress\033[0m\n' "$top"
+}
+
+# Backlog cards that are not fit to promote: too old, or missing the sections
+# a ticket needs before anyone could start it.
+cmd_stale() {
+  local days="${1:-14}" column
+  column="$(column_for_phase backlog)"
+  head_ "$column — needs attention (older than ${days}d, or incomplete)"
+
+  local any=0 now
+  now="$(date +%s)"
+
+  while IFS=$'\t' read -r _id number _status title; do
+    local json body created age_days problems=()
+
+    json="$(gh issue view "$number" --repo "$REPO" --json body,createdAt 2>/dev/null)" || continue
+    body="$(jq -r '.body // ""' <<<"$json")"
+    created="$(jq -r '.createdAt' <<<"$json")"
+
+    # BSD date (macOS) and GNU date disagree on parsing; try both.
+    local created_epoch
+    created_epoch="$(date -j -f '%Y-%m-%dT%H:%M:%SZ' "$created" +%s 2>/dev/null \
+                     || date -d "$created" +%s 2>/dev/null || echo 0)"
+    age_days=$(( created_epoch > 0 ? (now - created_epoch) / 86400 : 0 ))
+
+    for section in "${REQUIRED_SECTIONS[@]}"; do
+      grep -qF "$section" <<<"$body" || problems+=("missing ${section#\#\# }")
+    done
+
+    # A template left unfilled is worse than an absent section: it looks done.
+    grep -qE '<[a-z ]+>' <<<"$body" && problems+=("unfilled template placeholders")
+
+    if (( age_days >= days )) || (( ${#problems[@]} > 0 )); then
+      any=1
+      printf '  \033[36m#%-5s\033[0m \033[2m%3dd old\033[0m  %s\n' "$number" "$age_days" "$title"
+      for p in "${problems[@]}"; do
+        printf '        \033[33m·\033[0m %s\n' "$p"
+      done
+      (( ${#problems[@]} == 0 )) && printf '        \033[2m· complete, just old — decide whether it still matters\033[0m\n'
+    fi
+  done < <(rows "$column")
+
+  if (( any == 0 )); then
+    printf '  \033[2m(nothing stale — every backlog ticket is complete and recent)\033[0m\n'
+  else
+    printf '\n  Refine one with: \033[36mghboard status <n>\033[0m then edit it, and move it on\n'
+    printf '  when it is ready: \033[36mghboard move <n> ready\033[0m\n'
+  fi
+}
+
+cmd_status() {
+  local issue="$1" found
+  found="$(rows | awk -F'\t' -v n="$issue" '$2 == n {print $3}' | head -1)"
+  [[ -n "$found" ]] || die "issue #$issue is not on board $OWNER/$NUMBER"
+  printf '%s\n' "$found"
+}
+
+cmd_add() {
+  local issue="$1"
+  gh project item-add "$NUMBER" --owner "$OWNER" \
+    --url "https://github.com/$REPO/issues/$issue" >/dev/null
+  ITEMS_CACHE=""
+  ok "added #$issue to the board"
+}
+
+cmd_move() {
+  local issue="$1" phase="$2" column item field field_id option_id
+  column="$(column_for_phase "$phase")"
+
+  item="$(item_id_for_issue "$issue")"
+  if [[ -z "$item" ]]; then
+    warn "issue #$issue was not on the board; adding it"
+    cmd_add "$issue"
+    item="$(item_id_for_issue "$issue")"
+    [[ -n "$item" ]] || die "could not add #$issue to the board"
+  fi
+
+  field="$(status_field_json)"
+  field_id="$(jq -r .id <<<"$field")"
+  option_id="$(jq -r --arg c "$column" '.options[] | select(.name == $c) | .id' <<<"$field")"
+  [[ -n "$option_id" ]] || die "column '$column' not found on the board. Run: ghboard validate"
+
+  gh project item-edit \
+    --id "$item" \
+    --project-id "$(project_id)" \
+    --field-id "$field_id" \
+    --single-select-option-id "$option_id" >/dev/null
+
+  ok "#$issue -> $column"
+}
+
+case "${1:-}" in
+  validate) cmd_validate ;;
+  list)     cmd_list "${2:-}" ;;
+  find)     [[ $# -ge 2 ]] || die "usage: ghboard find <text>";           shift; cmd_find "$*" ;;
+  next)     cmd_next ;;
+  stale)    cmd_stale "${2:-14}" ;;
+  status)   [[ $# -eq 2 ]] || die "usage: ghboard status <issue>";        cmd_status "$2" ;;
+  add)      [[ $# -eq 2 ]] || die "usage: ghboard add <issue>";           cmd_add "$2" ;;
+  move)     [[ $# -eq 3 ]] || die "usage: ghboard move <issue> <phase>";  cmd_move "$2" "$3" ;;
+  *)        usage; exit 1 ;;
+esac

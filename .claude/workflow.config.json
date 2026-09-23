@@ -1,0 +1,62 @@
+{
+  "$schema": "./workflow.config.schema.json",
+  "project": {
+    "owner": "amlwwalker",
+    "ownerType": "user",
+    "number": 5,
+    "url": "https://github.com/users/amlwwalker/projects/5",
+    "statusField": "Status",
+    "columns": {
+      "backlog": "Backlog",
+      "ready": "Ready",
+      "inProgress": "In progress",
+      "inReview": "In review",
+      "done": "Done"
+    }
+  },
+  "branches": {
+    "production": "main",
+    "integration": "dev",
+    "featurePrefix": "feature/"
+  },
+  "tests": {
+    "backend": {
+      "dir": "backend",
+      "command": "make test-backend",
+      "integrationCommand": "make test-integration",
+      "glob": "backend/**/*_test.go",
+      "language": "go"
+    },
+    "backendTs": {
+      "dir": "backend-ts",
+      "command": "make test-backend-ts",
+      "integrationCommand": "make test-integration-ts",
+      "glob": "backend-ts/src/**/*.test.ts",
+      "language": "vitest"
+    },
+    "frontend": {
+      "dir": "frontend",
+      "command": "make test-frontend",
+      "glob": "frontend/src/**/*.test.{ts,tsx}",
+      "language": "vitest"
+    }
+  },
+  "requiredSkills": [
+    {
+      "name": "superpowers:brainstorming",
+      "phase": "design",
+      "why": "Gathers requirements before a ticket is written."
+    },
+    {
+      "name": "wireframe-ui",
+      "phase": "implementation",
+      "why": "House UI style. Any new screen or component follows it; tokens.ts and ui.tsx in this repo are copied from it."
+    }
+  ],
+  "environments": {
+    "dev": {
+      "url": null,
+      "note": "Set this once dev deploys somewhere. Manual test steps reference it, and review-handoff refuses to write a checklist saying 'open dev' if it does not know where dev is."
+    }
+  }
+}

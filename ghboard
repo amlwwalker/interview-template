@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#
+# Convenience wrapper so you can type `./ghboard` from the project root.
+#
+# The real script lives with the skill that owns it —
+# .claude/skills/feature-workflow/scripts/ghboard — so that copying .claude/
+# into another repo brings the process and its tooling together. This file is
+# the only part that is repo-local, and it is three lines.
+#
+exec "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.claude/skills/feature-workflow/scripts/ghboard" "$@"

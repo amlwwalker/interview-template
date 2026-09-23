@@ -1,0 +1,54 @@
+/**
+ * The only global stylesheet in the project.
+ *
+ * Per the wireframe-ui skill, global CSS holds the font declarations and
+ * nothing else. Every other style is an inline style object reading from
+ * tokens.ts. There are no utility classes and no component classes here.
+ *
+ * Swap these three stacks for real font files when the project has a brand;
+ * components never need to change, because they read the variables.
+ */
+
+:root {
+  --font-heading: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, sans-serif;
+  --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* The system is monochrome and light-only by design. No dark scheme. */
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: #fff;
+  color: #111;
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Form controls do not inherit the page font on their own. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* The design has no shadows, so focus must stay visible some other way.
+   A square ink outline matches the hairline language. */
+:focus-visible {
+  outline: 1px solid #111;
+  outline-offset: 2px;
+}

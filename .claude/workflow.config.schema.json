@@ -1,0 +1,112 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Project workflow configuration",
+  "description": "Binds the repo-agnostic workflow skills in .claude/skills/ to one repository's board, branches and test commands. Copy this file and workflow.config.json into any repo that wants the same process; the skills themselves need no changes.\n\nDeliberately absent: the repository owner and name. Those come from `git remote`, so a fork, a rename or a transfer cannot leave a stale value here.",
+  "type": "object",
+  "required": ["project", "branches", "tests"],
+  "additionalProperties": false,
+
+  "properties": {
+    "$schema": { "type": "string" },
+
+    "project": {
+      "type": "object",
+      "description": "The GitHub Projects v2 board this repo's work is tracked on.",
+      "required": ["owner", "ownerType", "number", "statusField", "columns"],
+      "additionalProperties": false,
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "User or organisation login that owns the board. Not necessarily the repo owner — one board often spans several repos."
+        },
+        "ownerType": {
+          "enum": ["user", "org"],
+          "description": "Decides whether gh is called with --owner @me / a login, and which GraphQL root is used."
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The board number, from its URL: /users/<owner>/projects/<number>."
+        },
+        "url": { "type": "string", "description": "Human-readable link, for messages and ticket bodies." },
+        "statusField": {
+          "type": "string",
+          "default": "Status",
+          "description": "Name of the single-select field holding the column. GitHub's templates call it Status; a custom board may not."
+        },
+        "columns": {
+          "type": "object",
+          "description": "Maps the workflow's internal phase names to the literal option names on the board. These are matched EXACTLY, case included. `board.sh validate` reads the live options and fails if any value here is missing, rather than silently creating a duplicate column.",
+          "required": ["backlog", "ready", "inProgress", "inReview", "done"],
+          "additionalProperties": false,
+          "properties": {
+            "backlog": { "type": "string", "description": "Written but not approved to start." },
+            "ready": { "type": "string", "description": "Approved; work may begin." },
+            "inProgress": { "type": "string", "description": "A feature branch exists." },
+            "inReview": { "type": "string", "description": "Merged to the integration branch and awaiting human verification." },
+            "done": { "type": "string", "description": "Verified. Moving a card here is what authorises a release." }
+          }
+        }
+      }
+    },
+
+    "branches": {
+      "type": "object",
+      "required": ["production", "integration", "featurePrefix"],
+      "additionalProperties": false,
+      "properties": {
+        "production": { "type": "string", "description": "Only ever receives PRs from the integration branch." },
+        "integration": { "type": "string", "description": "Where 'In review' work lives so a human can test it." },
+        "featurePrefix": { "type": "string", "description": "Branches are <prefix><issue-number>-<slug>." }
+      }
+    },
+
+    "tests": {
+      "type": "object",
+      "description": "One entry per suite. `command` is what both a human and CI run — always a make target, never a raw tool invocation, so the two cannot drift apart.",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["dir", "command", "glob", "language"],
+        "additionalProperties": false,
+        "properties": {
+          "dir": { "type": "string" },
+          "command": { "type": "string" },
+          "integrationCommand": { "type": "string", "description": "Optional slower suite needing real infrastructure." },
+          "glob": { "type": "string", "description": "Used by test-inventory.sh to find test files." },
+          "language": {
+            "enum": ["go", "vitest"],
+            "description": "Selects how test-inventory.sh extracts names and descriptions. Go reads the `//` comment above `func TestX`; vitest reads the it()/test() string."
+          }
+        }
+      }
+    },
+
+    "requiredSkills": {
+      "type": "array",
+      "description": "Globally-installed skills this project's process depends on. feature-workflow checks these are available and says plainly which is missing, so a project that was set up elsewhere fails loudly rather than quietly skipping a phase. Listing a skill here does NOT vendor it — anything the repo genuinely needs a copy of (design tokens, component patterns) is copied into the repo with a header naming its origin.",
+      "items": {
+        "type": "object",
+        "required": ["name", "phase", "why"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "description": "Exactly as the skill is invoked, including any plugin prefix." },
+          "phase": { "enum": ["design", "implementation", "review", "release"] },
+          "why": { "type": "string", "description": "One line. Shown to the user when the skill is missing." }
+        }
+      }
+    },
+
+    "environments": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "url": { "type": ["string", "null"] },
+          "note": { "type": "string" }
+        }
+      }
+    }
+  }
+}
