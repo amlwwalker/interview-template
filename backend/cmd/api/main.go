@@ -19,6 +19,7 @@ import (
 	"github.com/alex/crudapi/internal/config"
 	"github.com/alex/crudapi/internal/database"
 	"github.com/alex/crudapi/internal/httpx"
+	"github.com/alex/crudapi/internal/llm"
 	"github.com/alex/crudapi/internal/record"
 )
 
@@ -152,9 +153,13 @@ func newRouter(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) http.
 	})
 
 	recordHandler := record.NewHandler(record.NewPostgresStore(pool), logger)
+	llmHandler := llm.NewHandler(llm.NewPostgresStore(pool), logger)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Mount("/records", recordHandler.Routes())
+		// Every verb this serves must appear in AllowedMethods above, or the
+		// browser rejects the preflight before a handler is ever reached.
+		r.Mount("/llms", llmHandler.Routes())
 	})
 
 	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
